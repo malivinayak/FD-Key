@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Candidate Key Finder</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .container {
+            max-width: 800px;
+            margin: 20px auto;
+        }
+
+        .fd-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+            align-items: center;
+        }
+
+        .fd-input {
+            flex: 1;
+        }
+
+        .result-box {
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+
+        @media (max-width: 576px) {
+            .fd-row {
+                flex-direction: column;
+            }
+
+            .fd-input {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h2 class="mb-4">Candidate Key Finder</h2>
+
+        <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title">Attributes</h5>
+                <input type="text" id="attributes" class="form-control"
+                    placeholder="Enter attributes (comma separated, e.g., A,B,C,D)">
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title">Functional Dependencies</h5>
+                <div id="fd-container">
+                    <div class="fd-row">
+                        <input type="text" class="form-control fd-input" placeholder="Left side (e.g., A,B)">
+                        <span>→</span>
+                        <input type="text" class="form-control fd-input" placeholder="Right side (e.g., C)">
+                        <button class="btn btn-danger remove-fd">×</button>
+                    </div>
+                </div>
+                <button class="btn btn-secondary mt-2" id="add-fd">Add Dependency</button>
+            </div>
+        </div>
+
+        <button class="btn btn-primary mb-4" id="find-keys">Find Candidate Keys</button>
+
+        <div class="result-box">
+            <h5>Candidate Keys:</h5>
+            <div id="results"></div>
+        </div>
+    </div>
+
+    <script>
+        // Add/Remove FD rows
+        document.addEventListener('click', function (e) {
+            if (e.target && e.target.classList.contains('remove-fd')) {
+                e.target.closest('.fd-row').remove();
+            }
+        });
+
+        document.getElementById('add-fd').addEventListener('click', () => {
+            const row = document.createElement('div');
+            row.className = 'fd-row';
+            row.innerHTML = `
+        <input type="text" class="form-control fd-input" placeholder="Left side (e.g., A,B)">
+        <span>→</span>
+        <input type="text" class="form-control fd-input" placeholder="Right side (e.g., C)">
+        <button class="btn btn-danger remove-fd">×</button>
+    `;
+            document.getElementById('fd-container').appendChild(row);
+        });
+
+        // Find Candidate Keys
+        document.getElementById('find-keys').addEventListener('click', () => {
+            // Get attributes
+            const attributes = [...new Set(
+                document.getElementById('attributes').value.split(',').map(a => a.trim().toUpperCase())
+            )].filter(a => a);
+
+            // Get functional dependencies
+            const fds = [];
+            document.querySelectorAll('.fd-row').forEach(row => {
+                const inputs = row.querySelectorAll('input');
+                const left = [...new Set(inputs[0].value.split(',').map(a => a.trim().toUpperCase()))].filter(a => a);
+                const right = [...new Set(inputs[1].value.split(',').map(a => a.trim().toUpperCase()))].filter(a => a);
+
+                if (left.length && right.length) {
+                    fds.push({ left: new Set(left), right: new Set(right) });
+                }
+            });
+
+            // Find candidate keys
+            const candidateKeys = findCandidateKeys(new Set(attributes), fds);
+
+            // Display results
+            const resultsDiv = document.getElementById('results');
+            if (candidateKeys.length === 0) {
+                resultsDiv.innerHTML = 'No candidate keys found';
+            } else {
+                resultsDiv.innerHTML = candidateKeys
+                    .map(ck => `<div class="mb-2">${[...ck].join(', ')}</div>`)
+                    .join('');
+            }
+        });
+
+        // Algorithm implementation
+        function computeClosure(attributes, fds) {
+            let closure = new Set(attributes);
+            let changed;
+            do {
+                changed = false;
+                for (const fd of fds) {
+                    if ([...fd.left].every(a => closure.has(a))) {
+                        const prevSize = closure.size;
+                        closure = new Set([...closure, ...fd.right]);
+                        if (closure.size > prevSize) changed = true;
+                    }
+                }
+            } while (changed);
+            return closure;
+        }
+
+        function findCandidateKeys(attributes, fds) {
+            const allAttributes = [...attributes];
+            const candidateKeys = [];
+
+            // Generate all possible subsets in increasing order of size
+            for (let size = 1; size <= allAttributes.length; size++) {
+                const subsets = generateCombinations(allAttributes, size);
+
+                for (const subset of subsets) {
+                    const closure = computeClosure(new Set(subset), fds);
+
+                    if (closure.size === allAttributes.length) {
+                        // Check minimality
+                        const isMinimal = !candidateKeys.some(ck =>
+                            ck.every(a => subset.includes(a)) && ck.length < subset.length
+                        );
+
+                        if (isMinimal) {
+                            candidateKeys.push(subset.sort());
+                        }
+                    }
+                }
+            }
+
+            // Remove duplicates and sort
+            return [...new Set(candidateKeys.map(ck => ck.join(',')))]
+                .map(ck => ck.split(','))
+                .sort((a, b) => a.length - b.length || a.join().localeCompare(b.join()));
+        }
+
+        function generateCombinations(arr, size) {
+            const combinations = [];
+            const helper = (start, current) => {
+                if (current.length === size) {
+                    combinations.push([...current]);
+                    return;
+                }
+                for (let i = start; i < arr.length; i++) {
+                    current.push(arr[i]);
+                    helper(i + 1, current);
+                    current.pop();
+                }
+            };
+            helper(0, []);
+            return combinations;
+        }
+    </script>
+</body>
+
+</html>
