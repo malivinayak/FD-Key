@@ -78,7 +78,7 @@
     </div>
 
     <script>
-        // Add/Remove FD rows
+        // Add/Remove FD rows (same as fixed version)
         document.addEventListener('click', function (e) {
             if (e.target && e.target.classList.contains('remove-fd')) {
                 e.target.closest('.fd-row').remove();
@@ -89,22 +89,51 @@
             const row = document.createElement('div');
             row.className = 'fd-row';
             row.innerHTML = `
-        <input type="text" class="form-control fd-input" placeholder="Left side (e.g., A,B)">
-        <span>→</span>
-        <input type="text" class="form-control fd-input" placeholder="Right side (e.g., C)">
-        <button class="btn btn-danger remove-fd">×</button>
-    `;
+                <input type="text" class="form-control fd-input" placeholder="Left side (e.g., A,B)">
+                <span>→</span>
+                <input type="text" class="form-control fd-input" placeholder="Right side (e.g., C)">
+                <button class="btn btn-danger remove-fd">×</button>
+            `;
             document.getElementById('fd-container').appendChild(row);
         });
 
-        // Find Candidate Keys
+        function findCandidateKeys(attributes, fds) {
+            const allAttributes = [...attributes];
+            let candidateKeys = [];
+
+            for (let size = 1; size <= allAttributes.length; size++) {
+                const subsets = generateCombinations(allAttributes, size);
+
+                for (const subset of subsets) {
+                    const closure = computeClosure(new Set(subset), fds);
+
+                    if (closure.size === allAttributes.length) {
+                        const isMinimal = !candidateKeys.some(ck =>
+                            ck.length < subset.length &&
+                            ck.every(a => subset.includes(a))
+                        );
+
+                        if (isMinimal) {
+                            candidateKeys = candidateKeys.filter(ck =>
+                                !(subset.length < ck.length && subset.every(a => ck.includes(a)))
+                            );
+                            candidateKeys.push([...subset].sort());
+                        }
+                    }
+                }
+            }
+
+            return [...new Set(candidateKeys.map(ck => ck.sort().join(',')))]
+                .map(ck => ck.split(','))
+                .sort((a, b) => a.length - b.length || a.join().localeCompare(b.join()));
+        }
+
+        // Rest of the code remains the same -->
         document.getElementById('find-keys').addEventListener('click', () => {
-            // Get attributes
             const attributes = [...new Set(
                 document.getElementById('attributes').value.split(',').map(a => a.trim().toUpperCase())
             )].filter(a => a);
 
-            // Get functional dependencies
             const fds = [];
             document.querySelectorAll('.fd-row').forEach(row => {
                 const inputs = row.querySelectorAll('input');
@@ -116,21 +145,18 @@
                 }
             });
 
-            // Find candidate keys
             const candidateKeys = findCandidateKeys(new Set(attributes), fds);
 
-            // Display results
             const resultsDiv = document.getElementById('results');
             if (candidateKeys.length === 0) {
                 resultsDiv.innerHTML = 'No candidate keys found';
             } else {
                 resultsDiv.innerHTML = candidateKeys
-                    .map(ck => `<div class="mb-2">${[...ck].join(', ')}</div>`)
+                    .map(ck => `<div class="mb-2">${ck.join(', ')}</div>`)
                     .join('');
             }
         });
 
-        // Algorithm implementation
         function computeClosure(attributes, fds) {
             let closure = new Set(attributes);
             let changed;
@@ -139,42 +165,12 @@
                 for (const fd of fds) {
                     if ([...fd.left].every(a => closure.has(a))) {
                         const prevSize = closure.size;
-                        closure = new Set([...closure, ...fd.right]);
+                        fd.right.forEach(a => closure.add(a));
                         if (closure.size > prevSize) changed = true;
                     }
                 }
             } while (changed);
             return closure;
-        }
-
-        function findCandidateKeys(attributes, fds) {
-            const allAttributes = [...attributes];
-            const candidateKeys = [];
-
-            // Generate all possible subsets in increasing order of size
-            for (let size = 1; size <= allAttributes.length; size++) {
-                const subsets = generateCombinations(allAttributes, size);
-
-                for (const subset of subsets) {
-                    const closure = computeClosure(new Set(subset), fds);
-
-                    if (closure.size === allAttributes.length) {
-                        // Check minimality
-                        const isMinimal = !candidateKeys.some(ck =>
-                            ck.every(a => subset.includes(a)) && ck.length < subset.length
-                        );
-
-                        if (isMinimal) {
-                            candidateKeys.push(subset.sort());
-                        }
-                    }
-                }
-            }
-
-            // Remove duplicates and sort
-            return [...new Set(candidateKeys.map(ck => ck.join(',')))]
-                .map(ck => ck.split(','))
-                .sort((a, b) => a.length - b.length || a.join().localeCompare(b.join()));
         }
 
         function generateCombinations(arr, size) {
